@@ -1,7 +1,7 @@
 # VAE_DRAW
 MLILAB 2020 Spring Freshmen Seminar week 01,02
 
-### HOW TO START
+### HOW TO RUN 
 ```
 python train.py
 ```
