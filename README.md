@@ -5,4 +5,6 @@ MLILAB 2020 Spring Freshmen Seminar week 01,02
 ```
 python train.py
 ```
+### Reference
+https://github.com/Natsu6767/Generating-Devanagari-Using-DRAW
 
