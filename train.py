@@ -65,8 +65,8 @@ params['channel'] = 1
 
 # Initialize the model.
 # Choose VAE or DRAW
-# model = DRAWModel(params).to(device)
-model = VAEModel(params).to(device)
+model = DRAWModel(params).to(device)
+# model = VAEModel(params).to(device)
 # Adam Optimizer
 optimizer = optim.Adam(model.parameters(), lr=params['learning_rate'], betas=(params['beta1'], 0.999))
 
@@ -123,8 +123,9 @@ for epoch in range(params['epoch_num']):
             'params' : params
             }, 'checkpoint/model_epoch_{}'.format(epoch+1))
         
-        # with torch.no_grad():
-        #     generate_image(epoch+1)
+        with torch.no_grad():
+            # model.generate(64, epoch+1)
+            generate_image(epoch+1)
 
 training_time = time.time() - start_time
 print("-"*50)
@@ -138,8 +139,8 @@ torch.save({
     }, 'checkpoint/model_final'.format(epoch))
 
 # Generate test output.
-# with torch.no_grad():
-#     generate_image(params['epoch_num'])
+with torch.no_grad():
+    generate_image(params['epoch_num'])
 
 # Plot the training losses.
 plt.figure(figsize=(10,5))
