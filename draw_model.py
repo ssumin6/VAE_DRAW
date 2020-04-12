@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torchvision.utils as vutils
 import numpy as np
+import torch.nn.functional as F
 
 """
 The equation numbers on the comments corresponding
@@ -56,20 +57,21 @@ class DRAWModel(nn.Module):
         dec_state = torch.zeros(self.batch_size, self.dec_size, requires_grad=True, device=self.device)
 
         for t in range(self.T):
+            # c0 initialized
             c_prev = torch.zeros(self.batch_size, self.B*self.A*self.channel, requires_grad=True, device=self.device) if t == 0 else self.cs[t-1]
-            # Equation 3.TODO
-            x_hat = None
-            # Equation 4.TODO
+            # Equation 3.
+            x_hat = x - torch.sigmoid(c_prev)
+            # Equation 4.
             # Get the N x N glimpse.
-            r_t = None
-            # Equation 5.TODO
-            h_enc, enc_state = None
+            r_t = self.read(x, x_hat, h_dec_prev)
+            # Equation 5.
+            h_enc, enc_state = self.encoder(torch.cat([r_t, h_dec_prev],1), (h_enc_prev, enc_state))
             # Equation 6.
             z, self.mus[t], self.logsigmas[t], self.sigmas[t] = self.sampleQ(h_enc)
-            # Equation 7.TODO
-            h_dec, dec_state = None
-            # Equation 8. TODO
-            self.cs[t] = None
+            # Equation 7.
+            h_dec, dec_state = self.decoder(z, (h_dec_prev, dec_state))
+            # Equation 8.
+            self.cs[t] = c_prev + self.write(h_dec)
 
             h_enc_prev = h_enc
             h_dec_prev = h_dec
@@ -85,8 +87,8 @@ class DRAWModel(nn.Module):
             elif self.channel == 1:
                 img = img.view(-1, self.B, self.A)
 
-            # Equation 27. TODO 
-            glimpse = None
+            # Equation 27. 
+            glimpse = Fy.bmm(img).bmm(Fxt).view(-1, self.read_N*self.read_N)
 
             return glimpse * gamma.view(-1, 1).expand_as(glimpse)
 
@@ -99,31 +101,32 @@ class DRAWModel(nn.Module):
 
     def write(self, h_dec):
         # Using attention
-        # Equation 28. TODO
-        w = None
+        # Equation 28. 
+        w = self.fc_write(h_dec)
         if self.channel == 3:
             w = w.view(self.batch_size, 3, self.write_N, self.write_N)
         elif self.channel == 1:
             w = w.view(self.batch_size, self.write_N, self.write_N)
 
-        (Fx, Fy), gamma = None
+        (Fx, Fy), gamma = self.attn_window(h_dec, self.write_N)
         Fyt = Fy.transpose(self.channel, 2)
 
-        # Equation 29. TODO
-        wr = None
+        # Equation 29.
+        wr = Fyt.bmm(w).bmm(Fx).view(-1, self.A*self.B)
+        wr = wr / gamma.view(-1, 1).expand_as(wr)
 
         return wr 
         # No attention
         #return self.fc_write(h_dec)
 
     def sampleQ(self, h_enc):
-        # TODO epsilon ~ N(0,1) to sample from
-        e = None
+        # epsilon ~ N(0,1) to sample from
+        e = torch.randn(self.z_size)
 
-        # Equation 1. TODO
-        mu = None
-        # Equation 2. TODO
-        log_sigma = None
+        # Equation 1. 
+        mu = self.fc_mu(h_enc)
+        # Equation 2.
+        log_sigma = self.fc_sigma(h_enc)
         sigma = torch.exp(log_sigma)
         
         z = mu + e * sigma
@@ -135,12 +138,12 @@ class DRAWModel(nn.Module):
         params = self.fc_attention(h_dec)
         gx_, gy_, log_sigma_2, log_delta_, log_gamma = params.split(1, 1)
 
-        # Equation 22. TODO 
-        gx = None
+        # Equation 22.  
+        gx = (self.A+1)*0.5*(gx_+1)
         # Equation 23
-        gy = None
-        # Equation 24. TODO
-        delta = None
+        gy = (self.B+1)*0.5*(gy_+1)
+        # Equation 24.
+        delta = (max(self.A, self.B)-1)*torch.exp(log_delta_)/(N-1)
         sigma_2 = torch.exp(log_sigma_2)
         gamma = torch.exp(log_gamma)
 
@@ -149,10 +152,10 @@ class DRAWModel(nn.Module):
     def filterbank(self, gx, gy, sigma_2, delta, N, epsilon=1e-8):
         grid_i = torch.arange(start=0.0, end=N, device=self.device, requires_grad=True,).view(1, -1)
         
-        # Equation 19. TODO
-        mu_x = None
-        # Equation 20. TODO 
-        mu_y = None 
+        # Equation 19.
+        mu_x = gx + (grid_i - 0.5*N - 0.5)*delta
+        # Equation 20. 
+        mu_y = gy + (grid_i - 0.5*N - 0.5)*delta
 
         a = torch.arange(0.0, self.A, device=self.device, requires_grad=True).view(1, 1, -1)
         b = torch.arange(0.0, self.B, device=self.device, requires_grad=True).view(1, 1, -1)
@@ -162,8 +165,10 @@ class DRAWModel(nn.Module):
         sigma_2 = sigma_2.view(-1, 1, 1)
 
         # Equations 25 and 26. TODO
-        Fx = None
-        Fy = None 
+        Fx = torch.exp(-1*(a-mu_x)**2/(2*sigma_2))
+        Fx = Fx/(torch.sum(Fx, 2).view(-1,N,1).expand_as(Fx)+epsilon)
+        Fy = torch.exp(-1*(b-mu_y)**2/(2*sigma_2))
+        Fy = Fy/(torch.sum(Fy, 2).view(-1, N, 1).expand_as(Fy)+epsilon)
 
 
         if self.channel == 3:
@@ -179,16 +184,16 @@ class DRAWModel(nn.Module):
         self.forward(x)
 
         # Reconstruction loss.
-        Lx = 0 # TODO : BCELoss
+        Lx = F.binary_cross_entropy(torch.sigmoid(self.cs[-1]), x)*self.A*self.B#TODO BCELoss
 
         # Latent loss.
         Lz = 0
         for t in range(self.T):
-            kl_loss = 0 # TODO
+            kl_loss = 0.5*(self.mus[t].pow(2) + self.sigmas[t].pow(2) - 2*self.logsigmas[t] -1)
             Lz += kl_loss
 
-        Lz = torch.mean(Lz)
-        net_loss = 0 # TODO 
+        Lz = torch.mean(Lz)  
+        net_loss = Lx+Lz
 
         return net_loss
 

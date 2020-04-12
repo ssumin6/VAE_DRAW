@@ -47,7 +47,7 @@ class VAEModel(nn.Module):
     def loss(self, x):
         # x_r : reconstructed 
         x_r, kl = self.forward(x)
-        loss = F.binary_cross_entropy(x_r, x, reduction='sum') + kl
+        loss = F.binary_cross_entropy(x_r, x)*self.A*self.B + kl
         return loss
     
 

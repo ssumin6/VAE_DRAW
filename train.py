@@ -17,7 +17,7 @@ def generate_image(epoch):
     plt.axis("off")
     ims = [[plt.imshow(np.transpose(i,(1,2,0)), animated=True)] for i in x]
     anim = animation.ArtistAnimation(fig, ims, interval=500, repeat_delay=1000, blit=True)
-    anim.save('generate/draw_epoch_{}.gif'.format(epoch), dpi=100, writer='imagemagick')
+    anim.save('generate/draw_epoch_{}.gif'.format(epoch), dpi=100, writer='imagemagick')     
     plt.close('all')
 
 # Dictionary storing network parameters.
