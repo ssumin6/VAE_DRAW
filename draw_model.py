@@ -164,7 +164,7 @@ class DRAWModel(nn.Module):
         mu_y = mu_y.view(-1, N, 1)
         sigma_2 = sigma_2.view(-1, 1, 1)
 
-        # Equations 25 and 26. TODO
+        # Equations 25 and 26. 
         Fx = torch.exp(-1*(a-mu_x)**2/(2*sigma_2))
         Fx = Fx/(torch.sum(Fx, 2).view(-1,N,1).expand_as(Fx)+epsilon)
         Fy = torch.exp(-1*(b-mu_y)**2/(2*sigma_2))
@@ -183,8 +183,8 @@ class DRAWModel(nn.Module):
     def loss(self, x):
         self.forward(x)
 
-        # Reconstruction loss.
-        Lx = F.binary_cross_entropy(torch.sigmoid(self.cs[-1]), x)*self.A*self.B#TODO BCELoss
+        # Reconstruction loss(BCELoss)
+        Lx = F.binary_cross_entropy(torch.sigmoid(self.cs[-1]), x)*self.A*self.B
 
         # Latent loss.
         Lz = 0
