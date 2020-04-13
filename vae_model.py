@@ -47,7 +47,7 @@ class VAEModel(nn.Module):
     def loss(self, x):
         # x_r : reconstructed 
         x_r, kl = self.forward(x)
-        loss = F.binary_cross_entropy(x_r, x)*self.A*self.B + kl
+        loss = F.binary_cross_entropy(x_r, x, reduction ='sum') + kl
         return loss
     
 
@@ -56,4 +56,4 @@ class VAEModel(nn.Module):
         img = self.decode(torch.randn(num_output, self.z_size))
 
         img = img.view(-1, self.channel, self.A, self.B)
-        vutils.save_image(img, 'sample_'+str(epoch)+'.png')
+        vutils.save_image(img, 'generate/sample_'+str(epoch)+'.png')
