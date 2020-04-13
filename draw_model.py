@@ -33,7 +33,8 @@ class DRAWModel(nn.Module):
         self.sigmas = [0] * self.T
         self.mus = [0] * self.T
 
-        self.encoder = nn.LSTMCell(2*self.read_N*self.read_N*self.channel + self.dec_size, self.enc_size)
+        # using attention
+        self.encoder = nn.LSTMCell(2*self.read_N*self.read_N*self.channel + self.dec_size, self.enc_size)        
 
         # To get the mean and standard deviation for the distribution of z.
         self.fc_mu = nn.Linear(self.enc_size, self.z_size)
@@ -77,6 +78,7 @@ class DRAWModel(nn.Module):
             h_dec_prev = h_dec
 
     def read(self, x, x_hat, h_dec_prev):
+        '''
         # Using attention 
         (Fx, Fy), gamma = self.attn_window(h_dec_prev, self.read_N)
 
@@ -87,20 +89,26 @@ class DRAWModel(nn.Module):
             elif self.channel == 1:
                 img = img.view(-1, self.B, self.A)
 
+            # Fy : [batch_size, N, self.B]
+            # img : [batch_size, self.B, self.A]
+            # Fxt : [batch_size, self.A, N]
+
             # Equation 27. 
             glimpse = Fy.bmm(img).bmm(Fxt).view(-1, self.read_N*self.read_N)
-
             return glimpse * gamma.view(-1, 1).expand_as(glimpse)
 
         x = filter_img(x, Fx, Fy, gamma)
         x_hat = filter_img(x_hat, Fx, Fy, gamma)
 
         return torch.cat((x, x_hat), dim=1)
+        '''
         # No attention
-        #return torch.cat((x, x_hat), dim=1)
+        self.encoder = nn.LSTMCell(2*self.A*self.B*self.channel + self.dec_size, self.enc_size)
+        return torch.cat((x, x_hat), dim=1)
 
     def write(self, h_dec):
         # Using attention
+        '''
         # Equation 28. 
         w = self.fc_write(h_dec)
         if self.channel == 3:
@@ -108,16 +116,23 @@ class DRAWModel(nn.Module):
         elif self.channel == 1:
             w = w.view(self.batch_size, self.write_N, self.write_N)
 
+        # gamma : [batch_size, 1]
         (Fx, Fy), gamma = self.attn_window(h_dec, self.write_N)
         Fyt = Fy.transpose(self.channel, 2)
+
+        # Fyt : [batch_size, self.B, N]
+        # w : [batch_size, N, N]
+        # Fx : [batch_size, N, self.A]
 
         # Equation 29.
         wr = Fyt.bmm(w).bmm(Fx).view(-1, self.A*self.B)
         wr = wr / gamma.view(-1, 1).expand_as(wr)
 
-        return wr 
+        return wr
+        '''
         # No attention
-        #return self.fc_write(h_dec)
+        self.fc_write = nn.Linear(self.dec_size, self.A*self.B*self.channel)
+        return self.fc_write(h_dec)
 
     def sampleQ(self, h_enc):
         # epsilon ~ N(0,1) to sample from
@@ -166,8 +181,10 @@ class DRAWModel(nn.Module):
 
         # Equations 25 and 26. 
         Fx = torch.exp(-1*(a-mu_x)**2/(2*sigma_2))
+        # normalize Fx [batch_size, N, self.A]
         Fx = Fx/(torch.sum(Fx, 2).view(-1,N,1).expand_as(Fx)+epsilon)
         Fy = torch.exp(-1*(b-mu_y)**2/(2*sigma_2))
+        # normalize Fy [batch_size, N, self.B]
         Fy = Fy/(torch.sum(Fy, 2).view(-1, N, 1).expand_as(Fy)+epsilon)
 
 
@@ -182,8 +199,9 @@ class DRAWModel(nn.Module):
 
     def loss(self, x):
         self.forward(x)
-
+        
         # Reconstruction loss(BCELoss)
+        # using attention 
         Lx = F.binary_cross_entropy(torch.sigmoid(self.cs[-1]), x)*self.A*self.B
 
         # Latent loss.
