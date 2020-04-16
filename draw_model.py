@@ -33,7 +33,6 @@ class DRAWModel(nn.Module):
         self.sigmas = [0] * self.T
         self.mus = [0] * self.T
 
-        # using attention
         self.encoder = nn.LSTMCell(2*self.read_N*self.read_N*self.channel + self.dec_size, self.enc_size)        
 
         # To get the mean and standard deviation for the distribution of z.
@@ -78,7 +77,7 @@ class DRAWModel(nn.Module):
             h_dec_prev = h_dec
 
     def read(self, x, x_hat, h_dec_prev):
-        '''
+        # '''
         # Using attention 
         (Fx, Fy), gamma = self.attn_window(h_dec_prev, self.read_N)
 
@@ -105,10 +104,11 @@ class DRAWModel(nn.Module):
         # No attention
         self.encoder = nn.LSTMCell(2*self.A*self.B*self.channel + self.dec_size, self.enc_size)
         return torch.cat((x, x_hat), dim=1)
+        '''
 
     def write(self, h_dec):
         # Using attention
-        '''
+        # '''
         # Equation 28. 
         w = self.fc_write(h_dec)
         if self.channel == 3:
@@ -133,6 +133,7 @@ class DRAWModel(nn.Module):
         # No attention
         self.fc_write = nn.Linear(self.dec_size, self.A*self.B*self.channel)
         return self.fc_write(h_dec)
+        '''
 
     def sampleQ(self, h_enc):
         # epsilon ~ N(0,1) to sample from
@@ -201,7 +202,6 @@ class DRAWModel(nn.Module):
         self.forward(x)
         
         # Reconstruction loss(BCELoss)
-        # using attention 
         Lx = F.binary_cross_entropy(torch.sigmoid(self.cs[-1]), x)*self.A*self.B
 
         # Latent loss.
