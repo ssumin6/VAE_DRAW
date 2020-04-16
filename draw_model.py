@@ -24,6 +24,8 @@ class DRAWModel(nn.Module):
         self.dec_size = params['dec_size']
         self.device = params['device']
         self.channel = params['channel']
+        # whether to use attention
+        self.attn = True
 
         # Stores the generated image for each time step.
         self.cs = [0] * self.T
@@ -33,15 +35,26 @@ class DRAWModel(nn.Module):
         self.sigmas = [0] * self.T
         self.mus = [0] * self.T
 
-        self.encoder = nn.LSTMCell(2*self.read_N*self.read_N*self.channel + self.dec_size, self.enc_size)        
+        
+        if (self.attn):
+            # using attention 
+            self.encoder = nn.LSTMCell(2*self.read_N*self.read_N*self.channel + self.dec_size, self.enc_size) 
+        else:       
+            # no attention 
+            self.encoder = nn.LSTMCell(2*self.A*self.B*self.channel + self.dec_size, self.enc_size)
 
         # To get the mean and standard deviation for the distribution of z.
         self.fc_mu = nn.Linear(self.enc_size, self.z_size)
         self.fc_sigma = nn.Linear(self.enc_size, self.z_size)
 
         self.decoder = nn.LSTMCell(self.z_size, self.dec_size)
-
-        self.fc_write = nn.Linear(self.dec_size, self.write_N*self.write_N*self.channel)
+  
+        if (self.attn):
+            # using attention 
+            self.fc_write = nn.Linear(self.dec_size, self.write_N*self.write_N*self.channel)
+        else:
+            # no attention 
+            self.fc_write = nn.Linear(self.dec_size, self.A*self.B*self.channel)
 
         # To get the attention parameters. 5 in total.
         self.fc_attention = nn.Linear(self.dec_size, 5)
@@ -77,7 +90,10 @@ class DRAWModel(nn.Module):
             h_dec_prev = h_dec
 
     def read(self, x, x_hat, h_dec_prev):
-        # '''
+        if (not self.attn):
+            # No attention
+            return torch.cat((x, x_hat), dim=1)
+
         # Using attention 
         (Fx, Fy), gamma = self.attn_window(h_dec_prev, self.read_N)
 
@@ -100,15 +116,13 @@ class DRAWModel(nn.Module):
         x_hat = filter_img(x_hat, Fx, Fy, gamma)
 
         return torch.cat((x, x_hat), dim=1)
-        '''
-        # No attention
-        self.encoder = nn.LSTMCell(2*self.A*self.B*self.channel + self.dec_size, self.enc_size)
-        return torch.cat((x, x_hat), dim=1)
-        '''
 
     def write(self, h_dec):
+        if (not self.attn):
+            # No attention
+            return self.fc_write(h_dec)
+
         # Using attention
-        # '''
         # Equation 28. 
         w = self.fc_write(h_dec)
         if self.channel == 3:
@@ -129,15 +143,10 @@ class DRAWModel(nn.Module):
         wr = wr / gamma.view(-1, 1).expand_as(wr)
 
         return wr
-        '''
-        # No attention
-        self.fc_write = nn.Linear(self.dec_size, self.A*self.B*self.channel)
-        return self.fc_write(h_dec)
-        '''
 
     def sampleQ(self, h_enc):
         # epsilon ~ N(0,1) to sample from
-        e = torch.randn(self.z_size)
+        e = torch.randn(self.batch_size, self.z_size)
 
         # Equation 1. 
         mu = self.fc_mu(h_enc)
